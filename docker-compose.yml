@@ -1,0 +1,110 @@
+# Docker Compose 設定檔
+# 用於 Laravel API 開發環境
+# 包含：Laravel (PHP 8.3) + MySQL 8.4 + Redis
+
+services:
+  # Laravel 應用服務
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: laravelapi-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - laravelapi-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=laraveldemo_db
+      - DB_USERNAME=root
+      - DB_PASSWORD=dev123
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    healthcheck:
+      test: ["CMD", "php", "-v"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx 網頁伺服器
+  nginx:
+    image: nginx:alpine
+    container_name: laravelapi-nginx
+    restart: unless-stopped
+    ports:
+      - "8007:80"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - laravelapi-network
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MySQL 8.4 資料庫服務
+  mysql:
+    image: mysql:8.4
+    container_name: laravelapi-mysql
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: dev123
+      MYSQL_DATABASE: laraveldemo_db
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf
+    networks:
+      - laravelapi-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pdev123"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis 快取服務
+  redis:
+    image: redis:alpine
+    container_name: laravelapi-redis
+    restart: unless-stopped
+    ports:
+      - "6387:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - laravelapi-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+# 網路設定
+networks:
+  laravelapi-network:
+    driver: bridge
+
+# 資料卷設定
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local

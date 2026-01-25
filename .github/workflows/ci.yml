@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: 測試與程式碼檢查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: 快取 Composer 套件
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: 安裝 Composer 依賴套件
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: 複製 .env 檔案
+        run: cp .env.example .env
+
+      - name: 產生應用程式金鑰
+        run: php artisan key:generate
+
+      - name: 建立 SQLite 測試資料庫
+        run: |
+          mkdir -p database
+          touch database/testing.sqlite
+
+      - name: 執行資料庫遷移
+        run: php artisan migrate --env=testing --force
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/testing.sqlite
+
+      - name: 程式碼風格檢查 (Laravel Pint)
+        run: ./vendor/bin/pint --test
+
+      - name: 執行測試 (Pest)
+        run: php artisan test
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/testing.sqlite
+
+  code-quality:
+    name: 程式碼品質檢查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+
+      - name: 快取 Composer 套件
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: 安裝 Composer 依賴套件
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: 檢查 PHP 語法錯誤
+        run: find app tests -name "*.php" -print0 | xargs -0 -n1 php -l
